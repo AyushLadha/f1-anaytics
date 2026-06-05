@@ -103,17 +103,84 @@ def ingest_qualifying(season: int, con) -> None:
                  _time_to_ms(q["Q1"]), _time_to_ms(q["Q2"]), _time_to_ms(q["Q3"])],
             )
 
+def _extract_practice_pace(laps):
+    """Reduce a session's hundreds of laps down to one row per driver:
+    their fastest accurate lap, what compound it was on, and how many
+    accurate laps they had total. Returns a list of (driver, ms, compound, count) tuples."""
+    accurate = laps[laps["IsAccurate"]].copy()
+    if accurate.empty:
+        return []
+
+    # Convert lap time to milliseconds so we can store it as BIGINT.
+    accurate["lap_ms"] = accurate["LapTime"].dt.total_seconds() * 1000
+
+    # For each driver, find the row index of their fastest accurate lap.
+    best_idx = accurate.groupby("Driver")["lap_ms"].idxmin()
+    best = accurate.loc[best_idx]
+
+    # And total accurate laps per driver (for the sample-size column).
+    counts = accurate.groupby("Driver").size().to_dict()
+
+    out = []
+    for _, row in best.iterrows():
+        driver = row["Driver"]
+        out.append((
+            driver,
+            int(row["lap_ms"]),
+            row["Compound"],
+            int(counts.get(driver, 0)),
+        ))
+    return out
+
+PRACTICE_SESSIONS = ("FP1", "FP2", "FP3")
+
+
+def ingest_practice_pace(season: int, rnd: int, con) -> None:
+    """Load each practice session for one race and store per-driver pace."""
+    for session_name in PRACTICE_SESSIONS:
+        # Skip if already loaded - same incremental pattern as the Ergast ingests.
+        existing = con.execute(
+            "SELECT count(*) FROM practice_pace WHERE season = ? AND round = ? AND session = ?",
+            [season, rnd, session_name],
+        ).fetchone()[0]
+        if existing > 0:
+            continue
+
+        try:
+            session = fastf1.get_session(season, rnd, session_name)
+            session.load(telemetry = False, weather = False, messages = False)
+        except Exception as e:
+            print(f"  {session_name} {season} round {rnd}: skipped ({e})")
+            continue
+
+        pace_rows = _extract_practice_pace(session.laps)
+        for driver, lap_ms, compound, lap_count in pace_rows:
+            con.execute(
+                "INSERT OR REPLACE INTO practice_pace VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [season, rnd, session_name, driver, lap_ms, compound, lap_count],
+            )
+        print(f"  {session_name} {season} round {rnd}: {len(pace_rows)} drivers")
+
 if __name__ == "__main__":
     db.init_db()
     con = db.connect()
 
-    seasons = [2021, 2022, 2023, 2024, 2025]
-    for season in seasons:
-        print(f"Ingesting {season} ...")
-        ingest_reference_data(season, con)
-        ingest_schedule(season, con)
-        ingest_results(season, con)
-        ingest_qualifying(season, con)
+    season = 2023  # change one number per run
+
+    rounds = con.execute(
+        "SELECT round FROM races WHERE season = ? ORDER BY round", [season]
+    ).fetchall()
+
+    print(f"Ingesting practice pace for {len(rounds)} races in {season} ...")
+    for (rnd,) in rounds:
+        ingest_practice_pace(season, rnd, con)
 
     con.close()
-    print("Ingestion complete. Counts:", db.table_counts())
+    print("Done. Practice pace counts per session:")
+    con = db.connect(read_only=True)
+    print(con.execute(
+        "SELECT season, session, count(*) AS rows "
+        "FROM practice_pace WHERE season = ? "
+        "GROUP BY season, session ORDER BY session", [season]
+    ).df())
+    con.close()

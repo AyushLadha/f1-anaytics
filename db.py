@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS laps (
     PRIMARY KEY (season, round, driver_id, lap_number)
 );
 
+CREATE TABLE IF NOT EXISTS practice_pace (
+    season              INTEGER,
+    round               INTEGER,
+    session             VARCHAR,   
+    driver_id           VARCHAR,   
+    fastest_lap_ms      BIGINT,    
+    fastest_compound    VARCHAR,   
+    accurate_lap_count  INTEGER,   
+    PRIMARY KEY (season, round, session, driver_id)
+);
+
 CREATE TABLE IF NOT EXISTS drivers (
     driver_id     VARCHAR PRIMARY KEY,
     code          VARCHAR,
