@@ -149,11 +149,11 @@ def ingest_practice_pace(season: int, rnd: int, con) -> None:
         try:
             session = fastf1.get_session(season, rnd, session_name)
             session.load(telemetry = False, weather = False, messages = False)
+            pace_rows = _extract_practice_pace(session.laps)
         except Exception as e:
             print(f"  {session_name} {season} round {rnd}: skipped ({e})")
             continue
 
-        pace_rows = _extract_practice_pace(session.laps)
         for driver, lap_ms, compound, lap_count in pace_rows:
             con.execute(
                 "INSERT OR REPLACE INTO practice_pace VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     db.init_db()
     con = db.connect()
 
-    season = 2023  # change one number per run
+    season = 2022  # change one number per run
 
     rounds = con.execute(
         "SELECT round FROM races WHERE season = ? ORDER BY round", [season]

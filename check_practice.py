@@ -7,7 +7,7 @@ print(con.execute("""
            count(*) FILTER (WHERE session = 'FP2') AS fp2,
            count(*) FILTER (WHERE session = 'FP3') AS fp3
     FROM practice_pace
-    WHERE season = 2023
+    WHERE season = 2022
     GROUP BY round
     ORDER BY round
 """).df())
