@@ -165,7 +165,7 @@ if __name__ == "__main__":
     db.init_db()
     con = db.connect()
 
-    season = 2022  # change one number per run
+    season = 2025  # change one number per run
 
     rounds = con.execute(
         "SELECT round FROM races WHERE season = ? ORDER BY round", [season]
